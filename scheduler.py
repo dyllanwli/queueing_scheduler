@@ -1,9 +1,9 @@
 import numpy as np
 from scipy.optimize import minimize_scalar
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 import threading
-import subprocess
 
 # Queueing model parameters (tune based on your system)
 LAMBDA = 1.0      # Arrival rate (tasks/sec)
@@ -18,7 +18,7 @@ def compute_expected_response_time(p, lambda_=LAMBDA, mu_cpu=MU_CPU, mu_pre=MU_P
         return np.inf
     
     # CPU queue: handles CPU-only tasks, preprocessing, and postprocessing
-    lambda_cpu = lambda_ * (1 + p)
+    lambda_cpu = lambda_ * (1 + p)  # (1-p) for CPU-only + p for pre + p for post
     e_s = ((1 - p) / (1 + p)) * (1 / mu_cpu) + (p / (1 + p)) * (1 / mu_pre) + (p / (1 + p)) * (1 / mu_post)
     e_s2 = ((1 - p) / (1 + p)) * 2 / (mu_cpu ** 2) + (p / (1 + p)) * 2 / (mu_pre ** 2) + (p / (1 + p)) * 2 / (mu_post ** 2)
     rho_cpu = lambda_cpu * e_s
@@ -57,20 +57,17 @@ def set_end_time(task_id):
     with times_lock:
         task_times[task_id][1] = time.time()
 
-# Process a task stage by calling inference.py
+# Execute a task stage using inference.py
 def process_task(task_id, stage):
     cmd = ["python", "inference.py", "--stage", stage]
     start_time = time.time()
     result = subprocess.run(cmd, capture_output=True, text=True)
-    service_time = time.time() - start_time
-    
+    duration = time.time() - start_time
     if result.returncode == 0:
-        print(f"Task {task_id} stage '{stage}' completed in {service_time:.2f}s: {result.stdout.strip()}")
+        print(f"Task {task_id} stage '{stage}' completed in {duration:.2f}s")
     else:
         print(f"Task {task_id} stage '{stage}' failed: {result.stderr}")
-        raise RuntimeError(f"Subprocess failed with code {result.returncode}")
-    
-    return service_time
+    return duration
 
 # Submit a task to CPU or GPU pipeline
 def submit_task(task_id, mode, cpu_executor, gpu_executor):
